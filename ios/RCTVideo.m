@@ -69,6 +69,7 @@ static NSString *const timedMetadata = @"timedMetadata";
     _playInBackground = false;
     _playWhenInactive = false;
     _ignoreSilentSwitch = @"inherit"; // inherit, ignore, obey
+    _videoSaved = NO;
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(applicationWillResignActive:)
@@ -492,29 +493,25 @@ static NSString *const timedMetadata = @"timedMetadata";
     [self applyModifiers];
   }
 
-  if(self.onVideoSaved) {
-  AVAssetExportSession *exporter = [[AVAssetExportSession alloc] initWithAsset:asset presetName:AVAssetExportPresetPassthrough];
+  if (self.onVideoSaved && !self.videoSaved) {
+    AVAssetExportSession *exporter = [[AVAssetExportSession alloc] initWithAsset:asset presetName:AVAssetExportPresetPassthrough];
 
-  NSString *filename = @"filename.mp4";
+    NSString *fileName = [NSString stringWithFormat:@"%@.mp4", [[NSUUID UUID] UUIDString]];
+    NSString *filePath = [NSTemporaryDirectory() stringByAppendingPathComponent:fileName];
+    NSURL *outputURL = [NSURL fileURLWithPath:filePath];
 
-  NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-  NSString *documentsDirectory = [paths lastObject];
+    exporter.outputURL = outputURL;
+    exporter.outputFileType = AVFileTypeMPEG4;
 
-  NSString *outputPath = [documentsDirectory stringByAppendingPathComponent: filename];
-  NSURL *outputURL = [NSURL fileURLWithPath:outputPath];
-
-  exporter.outputURL = outputURL;
-  exporter.outputFileType = AVFileTypeMPEG4;
-
-  [exporter exportAsynchronouslyWithCompletionHandler:^(void)
-    {
-      dispatch_async(dispatch_get_main_queue(), ^{
-        NSLog(@"Export Complete %d %@", exporter.status, exporter.error);
-        self.onVideoSaved(@{@"target": self.reactTag,
-                            @"outputPath": outputPath
-                            });
-      });
-    }];
+    [exporter exportAsynchronouslyWithCompletionHandler:^(void)
+     {
+       dispatch_async(dispatch_get_main_queue(), ^{
+         NSLog(@"RCTVideo export complete. Status %ld, error: %@", (long)exporter.status, exporter.error);
+         _videoSaved = YES;
+         self.onVideoSaved(@{ @"target": self.reactTag,
+                              @"outputPath": filePath });
+       });
+     }];
   }
 
 }
