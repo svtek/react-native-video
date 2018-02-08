@@ -756,9 +756,13 @@ static NSString *const timedMetadata = @"timedMetadata";
 
 - (void)removePlayerLayer
 {
-    [_playerLayer removeFromSuperlayer];
+  [_playerLayer removeFromSuperlayer];
+
+  @try {
     [_playerLayer removeObserver:self forKeyPath:readyForDisplayKeyPath];
-    _playerLayer = nil;
+  } @catch (NSException *e) { }
+
+  _playerLayer = nil;
 }
 
 #pragma mark - RCTVideoPlayerViewControllerDelegate
