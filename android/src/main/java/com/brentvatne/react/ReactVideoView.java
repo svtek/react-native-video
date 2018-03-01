@@ -1,10 +1,17 @@
 package com.brentvatne.react;
 
 import android.annotation.SuppressLint;
+import android.app.DownloadManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.res.AssetFileDescriptor;
+import android.database.Cursor;
 import android.graphics.Matrix;
 import android.media.MediaPlayer;
 import android.net.Uri;
+import android.os.Environment;
 import android.os.Handler;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -23,7 +30,9 @@ import com.yqritc.scalablevideoview.ScalableVideoView;
 import com.yqritc.scalablevideoview.ScaleManager;
 import com.yqritc.scalablevideoview.Size;
 
+import java.io.File;
 import java.io.IOException;
+import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 import java.lang.Math;
@@ -109,6 +118,39 @@ public class ReactVideoView extends ScalableVideoView implements MediaPlayer.OnP
     private int mVideoBufferedDuration = 0;
     private boolean isCompleted = false;
     private boolean mUseNativeControls = false;
+    private boolean mShouldDownloadMedia = false;
+
+    private long mDownloadId = 0;
+    private boolean mIsDownloadInProgress = false;
+    private boolean mIsDownloaded = false;
+
+    BroadcastReceiver onDownloadComplete = new BroadcastReceiver() {
+        public void onReceive(Context context, Intent intent) {
+            long refId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
+            if (refId != mDownloadId) {
+                return;
+            }
+
+            DownloadManager mgr = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
+            DownloadManager.Query query = new DownloadManager.Query();
+            query.setFilterById(refId);
+            Cursor cur = mgr.query(query);
+            int index = cur.getColumnIndex(DownloadManager.COLUMN_STATUS);
+            if (cur.moveToFirst()) {
+                if (cur.getInt(index) == DownloadManager.STATUS_SUCCESSFUL) {
+                    mDownloadId = 0;
+                    mIsDownloaded = true;
+                    mIsDownloadInProgress = false;
+                    String filePath = cur.getString(cur.getColumnIndex(DownloadManager.COLUMN_LOCAL_FILENAME));
+                    Log.d("RCTVideo", "Downloaded video file path: " + filePath);
+                    WritableMap event = Arguments.createMap();
+                    event.putString("outputPath", filePath);
+                    mEventEmitter.receiveEvent(getId(), Events.EVENT_SAVED.toString(), event);
+                }
+            }
+            cur.close();
+        }
+    };
 
     public ReactVideoView(ThemedReactContext themedReactContext) {
         super(themedReactContext);
@@ -119,6 +161,9 @@ public class ReactVideoView extends ScalableVideoView implements MediaPlayer.OnP
 
         initializeMediaPlayerIfNeeded();
         setSurfaceTextureListener(this);
+
+        mThemedReactContext.getCurrentActivity().registerReceiver(
+                onDownloadComplete, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
 
         mProgressUpdateRunnable = new Runnable() {
             @Override
@@ -206,6 +251,35 @@ public class ReactVideoView extends ScalableVideoView implements MediaPlayer.OnP
         setSrc(uriString,type,isNetwork,isAsset,0,0);
     }
 
+    public void downloadMediaFile(String uriString) {
+        if (!mShouldDownloadMedia || mIsDownloaded || mIsDownloadInProgress) {
+            return;
+        }
+
+        mIsDownloadInProgress = true;
+
+        String fileName = "reality.mp4";
+        try {
+            URI uri = new URI(uriString);
+            fileName = new File(uri.getPath()).getName();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        Log.d("RCTVideo", "downloadMediaFile.fileName: " + fileName);
+
+        DownloadManager dm = (DownloadManager) this.mThemedReactContext.getCurrentActivity()
+                .getSystemService(Context.DOWNLOAD_SERVICE);
+        DownloadManager.Request req = new DownloadManager.Request(Uri.parse(uriString));
+        req.setAllowedNetworkTypes(DownloadManager.Request.NETWORK_MOBILE | DownloadManager.Request.NETWORK_WIFI);
+        req.setAllowedOverRoaming(false);
+        req.setTitle(fileName);
+        req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN);
+        req.setDestinationInExternalPublicDir(Environment.DIRECTORY_MOVIES, "/Leo/" + fileName);
+        req.setVisibleInDownloadsUi(false);
+        req.allowScanningByMediaScanner();
+        this.mDownloadId = dm.enqueue(req);
+    }
+
     public void setSrc(final String uriString, final String type, final boolean isNetwork, final boolean isAsset, final int expansionMainVersion, final int expansionPatchVersion) {
 
         mSrcUriString = uriString;
@@ -241,6 +315,8 @@ public class ReactVideoView extends ScalableVideoView implements MediaPlayer.OnP
                 }
 
                 setDataSource(uriString);
+                this.downloadMediaFile(uriString);
+
             } else if (isAsset) {
                 if (uriString.startsWith("content://")) {
                     Uri parsedUrl = Uri.parse(uriString);
@@ -263,15 +339,15 @@ public class ReactVideoView extends ScalableVideoView implements MediaPlayer.OnP
                 }
                 if(fd==null) {
                     int identifier = mThemedReactContext.getResources().getIdentifier(
-                        uriString,
-                        "drawable",
-                        mThemedReactContext.getPackageName()
+                            uriString,
+                            "drawable",
+                            mThemedReactContext.getPackageName()
                     );
                     if (identifier == 0) {
                         identifier = mThemedReactContext.getResources().getIdentifier(
-                            uriString,
-                            "raw",
-                            mThemedReactContext.getPackageName()
+                                uriString,
+                                "raw",
+                                mThemedReactContext.getPackageName()
                         );
                     }
                     setRawData(identifier);
@@ -300,9 +376,9 @@ public class ReactVideoView extends ScalableVideoView implements MediaPlayer.OnP
         mEventEmitter.receiveEvent(getId(), Events.EVENT_LOAD_START.toString(), event);
 
         try {
-          prepareAsync(this);
+            prepareAsync(this);
         } catch (Exception e) {
-          e.printStackTrace();
+            e.printStackTrace();
         }
     }
 
@@ -399,6 +475,10 @@ public class ReactVideoView extends ScalableVideoView implements MediaPlayer.OnP
 
     public void setControls(boolean controls) {
         this.mUseNativeControls = controls;
+    }
+
+    public void setDownload(boolean download) {
+        this.mShouldDownloadMedia = download;
     }
 
 

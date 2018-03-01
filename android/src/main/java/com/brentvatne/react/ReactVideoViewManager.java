@@ -35,6 +35,7 @@ public class ReactVideoViewManager extends SimpleViewManager<ReactVideoView> {
     public static final String PROP_RATE = "rate";
     public static final String PROP_PLAY_IN_BACKGROUND = "playInBackground";
     public static final String PROP_CONTROLS = "controls";
+    public static final String PROP_DOWNLOAD = "download";
 
     @Override
     public String getName() {
@@ -147,5 +148,10 @@ public class ReactVideoViewManager extends SimpleViewManager<ReactVideoView> {
     @ReactProp(name = PROP_CONTROLS, defaultBoolean = false)
     public void setControls(final ReactVideoView videoView, final boolean controls) {
         videoView.setControls(controls);
+    }
+
+    @ReactProp(name = PROP_DOWNLOAD, defaultBoolean = false)
+    public void setDownload(final ReactVideoView videoView, final boolean download) {
+        videoView.setDownload(download);
     }
 }
