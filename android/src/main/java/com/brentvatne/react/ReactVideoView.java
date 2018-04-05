@@ -141,7 +141,7 @@ public class ReactVideoView extends ScalableVideoView implements MediaPlayer.OnP
                     mDownloadId = 0;
                     mIsDownloaded = true;
                     mIsDownloadInProgress = false;
-                    String filePath = cur.getString(cur.getColumnIndex(DownloadManager.COLUMN_LOCAL_FILENAME));
+                    String filePath = cur.getString(cur.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI));
                     Log.d("RCTVideo", "Downloaded video file path: " + filePath);
                     WritableMap event = Arguments.createMap();
                     event.putString("outputPath", filePath);
